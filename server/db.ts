@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, distributors, teamMembers, Distributor, TeamMember } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,121 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+/**
+ * Get user by ID
+ */
+export async function getUserById(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Create a new distributor account
+ */
+export async function createDistributor(input: {
+  userId: number;
+  companyName: string;
+  hyciteUsername: string;
+  hyciteEmail: string;
+}): Promise<Distributor> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db.insert(distributors).values(input);
+  const distributorId = (result as any).insertId;
+
+  const created = await db.select().from(distributors).where(eq(distributors.id, distributorId)).limit(1);
+  if (!created.length) throw new Error("Failed to create distributor");
+
+  return created[0];
+}
+
+/**
+ * Get distributor by user ID
+ */
+export async function getDistributorByUserId(userId: number): Promise<Distributor | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(distributors).where(eq(distributors.userId, userId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Get distributor by ID
+ */
+export async function getDistributorById(distributorId: number): Promise<Distributor | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(distributors).where(eq(distributors.id, distributorId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Add a team member to a distributor account
+ */
+export async function addTeamMember(input: {
+  distributorId: number;
+  userId: number;
+  role: "admin_cuentas";
+  permissions?: string[];
+}): Promise<TeamMember> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db.insert(teamMembers).values({
+    distributorId: input.distributorId,
+    userId: input.userId,
+    role: input.role,
+    permissions: input.permissions ? JSON.stringify(input.permissions) : null,
+  });
+
+  const memberId = (result as any).insertId;
+  const created = await db.select().from(teamMembers).where(eq(teamMembers.id, memberId)).limit(1);
+  if (!created.length) throw new Error("Failed to add team member");
+
+  return created[0];
+}
+
+/**
+ * Get team members for a distributor
+ */
+export async function getTeamMembers(distributorId: number): Promise<TeamMember[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db.select().from(teamMembers).where(eq(teamMembers.distributorId, distributorId));
+}
+
+/**
+ * Get team member by ID
+ */
+export async function getTeamMemberById(teamMemberId: number): Promise<TeamMember | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(teamMembers).where(eq(teamMembers.id, teamMemberId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/**
+ * Check if user is a team member of a distributor
+ */
+export async function isTeamMember(distributorId: number, userId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const result = await db
+    .select()
+    .from(teamMembers)
+    .where(
+      eq(teamMembers.distributorId, distributorId) && eq(teamMembers.userId, userId)
+    )
+    .limit(1);
+
+  return result.length > 0;
+}

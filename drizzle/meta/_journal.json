@@ -1,5 +1,27 @@
 {
   "version": "7",
   "dialect": "mysql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1777050909951,
+      "tag": "0000_charming_mysterio",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1777051415762,
+      "tag": "0001_clean_lady_deathstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1777051439222,
+      "tag": "0002_bright_may_parker",
+      "breakpoints": true
+    }
+  ]
 }
