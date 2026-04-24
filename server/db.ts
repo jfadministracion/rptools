@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, distributors, teamMembers, Distributor, TeamMember } from "../drizzle/schema";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { InsertUser, users, distributors, team_members, Distributor, TeamMember } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -9,7 +10,8 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const client = postgres(process.env.DATABASE_URL);
+      _db = drizzle(client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -68,7 +70,9 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    // For PostgreSQL, use ON CONFLICT instead of ON DUPLICATE KEY UPDATE
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
@@ -89,121 +93,72 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-/**
- * Get user by ID
- */
-export async function getUserById(userId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
-}
-
-/**
- * Create a new distributor account
- */
-export async function createDistributor(input: {
+// Distributor helpers
+export async function createDistributor(data: {
   userId: number;
   companyName: string;
   hyciteUsername: string;
   hyciteEmail: string;
-}): Promise<Distributor> {
+}) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    throw new Error("Database not available");
+  }
 
-  const result = await db.insert(distributors).values(input);
-  const distributorId = (result as any).insertId;
-
-  const created = await db.select().from(distributors).where(eq(distributors.id, distributorId)).limit(1);
-  if (!created.length) throw new Error("Failed to create distributor");
-
-  return created[0];
+  const result = await db.insert(distributors).values(data).returning();
+  return result[0];
 }
 
-/**
- * Get distributor by user ID
- */
-export async function getDistributorByUserId(userId: number): Promise<Distributor | undefined> {
+export async function getDistributorByUserId(userId: number) {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) {
+    return undefined;
+  }
 
   const result = await db.select().from(distributors).where(eq(distributors.userId, userId)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
-/**
- * Get distributor by ID
- */
-export async function getDistributorById(distributorId: number): Promise<Distributor | undefined> {
+export async function getDistributorById(id: number) {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) {
+    return undefined;
+  }
 
-  const result = await db.select().from(distributors).where(eq(distributors.id, distributorId)).limit(1);
+  const result = await db.select().from(distributors).where(eq(distributors.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
-/**
- * Add a team member to a distributor account
- */
-export async function addTeamMember(input: {
+// Team member helpers
+export async function addTeamMember(data: {
   distributorId: number;
   userId: number;
-  role: "admin_cuentas";
-  permissions?: string[];
-}): Promise<TeamMember> {
+  role: string;
+  permissions?: Record<string, unknown>;
+}) {
   const db = await getDb();
-  if (!db) throw new Error("Database not available");
+  if (!db) {
+    throw new Error("Database not available");
+  }
 
-  const result = await db.insert(teamMembers).values({
-    distributorId: input.distributorId,
-    userId: input.userId,
-    role: input.role,
-    permissions: input.permissions ? JSON.stringify(input.permissions) : null,
-  });
-
-  const memberId = (result as any).insertId;
-  const created = await db.select().from(teamMembers).where(eq(teamMembers.id, memberId)).limit(1);
-  if (!created.length) throw new Error("Failed to add team member");
-
-  return created[0];
+  const result = await db.insert(team_members).values(data).returning();
+  return result[0];
 }
 
-/**
- * Get team members for a distributor
- */
-export async function getTeamMembers(distributorId: number): Promise<TeamMember[]> {
+export async function getTeamMembers(distributorId: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) {
+    return [];
+  }
 
-  return await db.select().from(teamMembers).where(eq(teamMembers.distributorId, distributorId));
+  return await db.select().from(team_members).where(eq(team_members.distributorId, distributorId));
 }
 
-/**
- * Get team member by ID
- */
-export async function getTeamMemberById(teamMemberId: number): Promise<TeamMember | undefined> {
+export async function removeTeamMember(id: number) {
   const db = await getDb();
-  if (!db) return undefined;
+  if (!db) {
+    throw new Error("Database not available");
+  }
 
-  const result = await db.select().from(teamMembers).where(eq(teamMembers.id, teamMemberId)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
-}
-
-/**
- * Check if user is a team member of a distributor
- */
-export async function isTeamMember(distributorId: number, userId: number): Promise<boolean> {
-  const db = await getDb();
-  if (!db) return false;
-
-  const result = await db
-    .select()
-    .from(teamMembers)
-    .where(
-      eq(teamMembers.distributorId, distributorId) && eq(teamMembers.userId, userId)
-    )
-    .limit(1);
-
-  return result.length > 0;
+  await db.delete(team_members).where(eq(team_members.id, id));
 }
